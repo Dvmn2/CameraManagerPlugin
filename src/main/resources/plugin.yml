@@ -1,0 +1,13 @@
+name: CameraManagerPlugin
+version: '${version}'
+
+main: net.dvmn2.cameraManagerPlugin.CameraManagerPlugin
+api-version: '1.21.11'
+load: POSTWORLD
+
+authors: [ DVMN2 ]
+
+permissions:
+  cameramanager.shake.admin:
+    description: Доступ к сканированию
+    default: op
