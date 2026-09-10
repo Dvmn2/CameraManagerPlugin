@@ -4,32 +4,28 @@ import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import com.mojang.brigadier.tree.LiteralCommandNode;
-
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
-
 import net.kyori.adventure.text.Component;
-
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 
-/**
- * Команда {@code /shake <targets> <angle_delta> <position_delta> <duration>}.
- * <p>
- * Отправляет выбранным игрокам plugin-message с параметрами тряски камеры.
- * Реальную тряску применяет клиентский мод CameraManager (см. {@code CameraShakeHandler}
- * и {@code ShakeMixin} в клиентском модуле) — плагин лишь передаёт данные.
- * Если у игрока мод не установлен, канал просто игнорируется клиентом, ничего
- * не сломается.
- */
 public class ShakeCommand {
+
+    // Значения по умолчанию для необязательных параметров команды —
+    // применяются, если соответствующий аргумент не указан при вызове.
+    private static final int DEFAULT_ANGLE_DELTA = 20;
+    private static final int DEFAULT_POSITION_DELTA = 20;
+    private static final int DEFAULT_DURATION = 20;
+
+    private static final String[] MODES = {"add", "stop"};
 
     // ВАЖНО: должно совпадать с идентификатором пакета в моде
     // (CameraShakePayload.ID -> Identifier.of("cameramanager", "shake")).
@@ -40,30 +36,63 @@ public class ShakeCommand {
      * Все три числовых аргумента ограничены снизу нулём — отрицательная
      * амплитуда/длительность не имеет смысла.
      */
-    public static LiteralCommandNode<CommandSourceStack> create(JavaPlugin plugin) {
+    public static ArgumentBuilder<CommandSourceStack, ?> create(JavaPlugin plugin) {
         return Commands.literal("shake")
                 .requires(source -> source.getSender().hasPermission("cameramanager.shake.admin"))
+                .executes(ctx -> run(ctx,
+                        (List<Player>) ctx.getSource().getSender(),
+                        DEFAULT_ANGLE_DELTA,
+                        DEFAULT_POSITION_DELTA,
+                        DEFAULT_DURATION,
+                        plugin
+                ))
                 .then(Commands.argument("targets", ArgumentTypes.players())
+                        .executes(ctx -> run(ctx,
+                                resolvePlayers(ctx),
+                                DEFAULT_ANGLE_DELTA,
+                                DEFAULT_POSITION_DELTA,
+                                DEFAULT_DURATION,
+                                plugin
+                        ))
                         .then(Commands.argument("angle_delta", IntegerArgumentType.integer(0))
+                                .executes(ctx -> run(ctx,
+                                        resolvePlayers(ctx),
+                                        IntegerArgumentType.getInteger(ctx, "angle_delta"),
+                                        DEFAULT_POSITION_DELTA,
+                                        DEFAULT_DURATION,
+                                        plugin
+                                ))
                                 .then(Commands.argument("position_delta", IntegerArgumentType.integer(0))
-                                        .then(Commands.argument("duration", IntegerArgumentType.integer(0))
-                                                .executes(ctx -> run(ctx, plugin))))))
-                .build();
+                                        .executes(ctx -> run(ctx,
+                                                resolvePlayers(ctx),
+                                                IntegerArgumentType.getInteger(ctx, "angle_delta"),
+                                                IntegerArgumentType.getInteger(ctx, "position_delta"),
+                                                DEFAULT_DURATION,
+                                                plugin
+                                        ))
+                                        .then(Commands.argument("duration", IntegerArgumentType.integer(1))
+                                                .executes(ctx -> run(ctx,
+                                                        resolvePlayers(ctx),
+                                                        IntegerArgumentType.getInteger(ctx, "angle_delta"),
+                                                        IntegerArgumentType.getInteger(ctx, "position_delta"),
+                                                        IntegerArgumentType.getInteger(ctx, "duration"),
+                                                        plugin
+                                                ))))));
     }
 
-    private static int run(CommandContext<CommandSourceStack> ctx, JavaPlugin plugin) throws CommandSyntaxException {
-        PlayerSelectorArgumentResolver resolver =
-                ctx.getArgument("targets", PlayerSelectorArgumentResolver.class);
+    private static List<Player> resolvePlayers(CommandContext<CommandSourceStack> ctx) {
+        try {
+            PlayerSelectorArgumentResolver resolver =
+                    ctx.getArgument("targets", PlayerSelectorArgumentResolver.class);
+            return resolver.resolve(ctx.getSource());
+        } catch (CommandSyntaxException | IndexOutOfBoundsException e) {
+            ctx.getSource().getSender().sendMessage("§cИгрок не найден.");
+            return null;
+        }
+    }
 
-        // Ключевой момент: резолвим селектор через ctx.getSource() —
-        // у CommandSourceStack уже подставлена корректная location из
-        // /execute at, что важно для позиционных селекторов
-        // (например, @a[distance=..] при вызове через /execute).
-        List<Player> players = resolver.resolve(ctx.getSource());
-
-        int angle_delta = IntegerArgumentType.getInteger(ctx, "angle_delta");
-        int position_delta = IntegerArgumentType.getInteger(ctx, "position_delta");
-        int duration = IntegerArgumentType.getInteger(ctx, "duration");
+    private static int run(CommandContext<CommandSourceStack> ctx, List<Player> players,
+                           int angle_delta, int position_delta, int duration, JavaPlugin plugin) throws CommandSyntaxException {
 
         if (players.isEmpty()) {
             ctx.getSource().getSender().sendMessage(
