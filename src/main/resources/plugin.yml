@@ -2,12 +2,18 @@ name: CameraManagerPlugin
 version: '${version}'
 
 main: net.dvmn2.cameraManagerPlugin.CameraManagerPlugin
+# Рекомендуется указывать major.minor (например "1.21"), а не полную патч-версию —
+# это шире по совместимости и является общепринятой практикой в экосистеме Paper.
 api-version: '1.21.11'
 load: POSTWORLD
 
 authors: [ DVMN2 ]
 
 permissions:
+  cameramanager.admin:
+    description: Access to the /camera command
+    default: op
+
   cameramanager.shake.admin:
-    description: Доступ к сканированию
+    description: Access to the camera shake command
     default: op

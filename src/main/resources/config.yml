@@ -1,3 +1,10 @@
 settings:
   enabled: true
   message: "Config enabled!"
+
+  # Plugin message language.
+  # Allowed values:
+  #   "en"   — always English
+  #   "ru"   — always Russian
+  #   "auto" — resolved per command sender from their client locale
+  language: "auto"
