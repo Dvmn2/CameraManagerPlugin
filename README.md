@@ -1,94 +1,65 @@
 # CameraManagerPlugin
 
-Серверный плагин для **Paper 1.21.11** для удобного управления камерами игроков.
-Пока добавляющий только команду `/shake`, которая
-трясёт камеру выбранным игрокам. Сам эффект тряски реализован на клиенте в
-парном моде **[CameraManager](https://github.com/Dvmn2/CameraManager/tree/master)** —
-плагин лишь передаёт параметры тряски через стандартный канал Bukkit Plugin
-Messaging.
+Paper plugin for Minecraft 1.21.11. Server-side counterpart to the CameraManager Fabric client mod. Sends camera effect instructions to clients over a custom plugin-messaging channel.
 
-> Плагин и мод — два независимых проекта. Плагин не тянет за собой Fabric
-> API и не требует мода на сервере; мод не требует плагина, если параметры
-> тряски запускаются другим способом (например, другим плагином/датапаком,
-> который умеет слать пакеты в тот же канал).
+This project is under active development. The only implemented feature at this time is camera shake.
 
-## Возможности
+## Requirements
 
-- Команда `/shake <targets> <angle_delta> <position_delta> <duration>`
-  на базе Brigadier / Paper Command API.
-- Поддержка селекторов целей (`@a`, `@p`, `@a[distance=..]`, ники и т.д.),
-  включая работу через `/execute at ...`.
-- Отдельная permission-нода на использование команды.
-- Если у игрока не установлен клиентский мод — канал просто игнорируется,
-  ошибок и вылетов не возникает.
+- Paper 1.21.11 or a compatible fork
+- Java 21
+- CameraManager client mod installed on players who should receive camera effects
 
-## Команда
+## Features
 
-```
-/shake <targets> <angle_delta> <position_delta> <duration>
-```
+### Camera shake
 
-| Аргумент          | Тип        | Описание                                              |
-|-------------------|------------|--------------------------------------------------------|
-| `targets`         | селектор   | Игроки, которым нужно потрясти камеру                  |
-| `angle_delta`     | int (≥ 0)  | Максимальная амплитуда угла тряски (в градусах)        |
-| `position_delta`  | int (≥ 0)  | Максимальная амплитуда смещения камеры (сырые единицы) |
-| `duration`        | int (≥ 0)  | Длительность эффекта в тиках                           |
+Triggers a temporary camera shake effect on one or more players. The effect is applied entirely on the client; the server only sends the parameters (angle offset, position offset, duration) and does not track playback state.
 
-Особые случаи:
-- `duration = 0` на клиенте трактуется как **сброс** всех текущих тряcок у
-  игрока, а не как «тряска на ноль тиков».
-- Несколько последовательных вызовов `/shake` для одного игрока
-  накладываются друг на друга (складываются), а не заменяют друг друга.
+## Commands
 
-Пример:
+All commands are under `/camera`.
 
-```
-/shake @a[distance=..10] 5 20 40
+| Command | Description |
+|---|---|
+| `/camera shake add [targets] [angle_delta] [position_delta] [duration]` | Starts a camera shake. If `targets` is omitted, applies to the command sender. Defaults: `angle_delta=20`, `position_delta=20`, `duration=20` (ticks). |
+| `/camera shake stop [targets]` | Stops any active camera shake. If `targets` is omitted, applies to the command sender. |
+
+## Permissions
+
+| Permission | Description | Default |
+|---|---|---|
+| `cameramanager.admin` | Access to the `/camera` command | op |
+| `cameramanager.shake.admin` | Access to `/camera shake` | op |
+
+## Configuration
+
+`config.yml`:
+
+```yaml
+settings:
+  enabled: true
+  language: "auto"
 ```
 
-## Права доступа
+`language` controls the language of command feedback messages. Accepted values:
 
-| Нода                          | По умолчанию | Описание                          |
-|--------------------------------|--------------|------------------------------------|
-| `cameramanager.shake.admin`   | `op`         | Доступ к команде `/shake`          |
+- `en` — English
+- `ru` — Russian
+- `auto` — resolved per command sender from their client locale (console defaults to English)
 
-> Обратите внимание: в текущем `plugin.yml` эта нода ещё не объявлена явно.
-> Если вы используете отдельный менеджер прав (LuckPerms и т.п.), добавьте
-> её в `plugin.yml` вручную, иначе команда будет видна только операторам.
+## Installation
 
-## Установка
+1. Place the built jar in the server `plugins` folder.
+2. Start the server once to generate `config.yml`.
+3. Adjust permissions and `config.yml` as needed.
+4. Ensure players who should see camera effects have the CameraManager client mod installed.
 
-1. Убедитесь, что у вас **Paper 1.21.11** (или совместимая сборка,
-   `api-version: '1.21.11'`).
-2. Положите `.jar` плагина в папку `plugins/` сервера.
-3. Перезапустите сервер — при первом запуске будет создан `config.yml`.
-4. Выдайте игрокам-администраторам ноду `cameramanager.shake.admin`.
-5. (Опционально) Раздайте игрокам клиентский мод **CameraManager**, чтобы
-   тряска действительно ощущалась — без мода эффекта не будет, но и ошибок
-   тоже.
+## Networking
 
-## Как это работает "под капотом"
+The plugin registers two outgoing plugin-messaging channels:
 
-1. Плагин регистрирует исходящий канал `cameramanager:shake`
-   (`Messenger#registerOutgoingPluginChannel`).
-2. По команде `/shake` плагин пишет три `int` (angle_delta, position_delta,
-   duration) в `ByteArrayDataOutput` в строго фиксированном порядке.
-3. Байты отправляются игроку через `Player#sendPluginMessage`.
-4. Клиентский мод CameraManager получает их как обычный Fabric S2C-пакет
-   (имя канала совпадает с идентификатором пакета мода) и применяет тряску.
+- `cameramanager:shake` — starts a shake (payload: three 32-bit integers — angle delta, position delta, duration in ticks)
+- `cameramanager:shake_stop` — stops all active shakes (no payload)
 
-Единственное, что связывает плагин и мод — совпадающее имя канала и
-одинаковый порядок полей при записи/чтении. Общего кода или зависимости
-между проектами нет.
-
-## Требования
-
-- Paper (или форк на его основе) **1.21.11**.
-- Java 21+.
-
-## Совместимость с ванильными/другими клиентами
-
-Игроки без клиентского мода CameraManager могут пользоваться сервером как
-обычно — plugin message на неизвестный клиенту канал просто отбрасывается
-ванильным клиентом без каких-либо побочных эффектов.
+These channel identifiers must match the `CustomPayload` identifiers registered by the CameraManager client mod.
